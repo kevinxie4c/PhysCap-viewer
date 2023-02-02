@@ -58,7 +58,7 @@ sub draw {
     my $model_matrix = GLM::Mat4->new($identity_mat);
     $this->root->draw($model_matrix);
     #my @vertices = MotionViewer::Joint::create_box(0, 0, 0, 0.1, 0.1, 0.1);
-    #my $buffer= MotionViewer::Buffer->new(2, @vertices);
+    #my $buffer= MotionViewer::Buffer->new(2, \@vertices);
     #$this->shader->set_mat4('model', $model_matrix);
     #$buffer->bind;
     #use GLM;
@@ -85,7 +85,7 @@ sub new {
     $this->{pos} = $hash->{pos};
     if ($hash->{shape}) {
 	my @vertices = make_shape($hash->{shape});
-	$this->{shape_buffer} = MotionViewer::Buffer->new(2, @vertices);
+	$this->{shape_buffer} = MotionViewer::Buffer->new(2, \@vertices);
     } else {
 	$this->{shape_buffer} = undef;
     }
