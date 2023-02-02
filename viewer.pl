@@ -20,6 +20,7 @@ use warnings;
 my $win_id;
 my ($screen_width, $screen_height) = (1280, 720);
 my ($shader, $buffer, $camera);
+my $mesh_shader;
 
 my $orange = GLM::Vec3->new(1.0, 0.5, 0.2);
 my $red    = GLM::Vec3->new(1.0, 0.0, 0.0);
@@ -35,19 +36,27 @@ my $identity_mat = GLM::Mat4->new(
 );
 
 my $animate = 0;
-my $fps = 10; # 0.1 second per iteration. 10 Hz.
+my $fps = 40; # 0.1 second per iteration. 10 Hz.
 my $ffmpeg = $^O eq 'MSWin32' ? 'ffmpeg.exe': 'ffmpeg';
 my $fh_ffmpeg;
 my $recording = 0;
 my $png_counter = 0;
 
-my $floor_z = 0.2;
-my ($floor_width, $floor_height) = (1000, 1000);
+my $floor_z = 0.0;
+my ($floor_width, $floor_height) = (10, 10);
 my $floor_buffer;
 my $cube_buffer;
 my ($sphere_buffer, $num_vertices_sphere);
 my ($cylinder_buffer, $num_vertices_cylinder);
 my ($cone_buffer, $num_vertices_cone);
+
+my ($faces_buffer, $vertices_buffer, $head);
+my ($faces_size, $vertices_size);
+my ($vertices_array, $indices_array);
+my ($mesh_vao, $mesh_vao_array, $mesh_vbo, $mesh_vbo_array, $mesh_ebo, $mesh_ebo_array);
+my ($int_size, $float_size) = (4, 4);
+my $batch_size;
+
 
 my $shadow_map_shader;
 my ($shadow_map_height, $shadow_map_width) = (8192, 8192);
@@ -60,7 +69,15 @@ my $primitive_shader;
 
 GetOptions();
 
+my ($start_frame, $end_frame) = (0, 4600);
+#my ($start_frame, $end_frame) = (0, 500);
+my $frame = $start_frame;
+
 my $skeleton;
+my @positions;
+my @contacts;
+my @coms;
+my @kin_coms;
 
 # a     d
 #  +---+
@@ -71,11 +88,11 @@ my $skeleton;
 # b     c
 sub create_floor {
     my @n = (0, 1, 0);
-    my @a = (-$floor_width / 2, -$floor_height / 2, $floor_z);
-    my @b = (-$floor_width / 2,  $floor_height / 2, $floor_z);
-    my @c = ( $floor_width / 2,  $floor_height / 2, $floor_z);
-    my @d = ( $floor_width / 2, -$floor_height / 2, $floor_z);
-    $floor_buffer = MotionViewer::Buffer->new(2, @a, @n, @b, @n, @c, @n, @a, @n, @c, @n, @d, @n);
+    my @a = (-$floor_width / 2,  $floor_height / 2, $floor_z);
+    my @b = (-$floor_width / 2, -$floor_height / 2, $floor_z);
+    my @c = ( $floor_width / 2, -$floor_height / 2, $floor_z);
+    my @d = ( $floor_width / 2,  $floor_height / 2, $floor_z);
+    $floor_buffer = MotionViewer::Buffer->new(2, [@a, @n, @b, @n, @c, @n, @a, @n, @c, @n, @d, @n]);
 }
 
 #   a                e
@@ -125,7 +142,7 @@ sub create_cube {
     push @vertices, @g, @n6, @c, @n6, @b, @n6;
     push @vertices, @b, @n6, @f, @n6, @g, @n6;
 
-    $cube_buffer = MotionViewer::Buffer->new(2, @vertices);
+    $cube_buffer = MotionViewer::Buffer->new(2, \@vertices);
 }
 
 sub create_sphere {
@@ -182,7 +199,7 @@ sub create_sphere {
     }
     my @vertices = map { ($_->x, $_->y, $_->z) } @vlist;
     $num_vertices_sphere = @vertices / (3 * 2);
-    $sphere_buffer = MotionViewer::Buffer->new(2, @vertices);
+    $sphere_buffer = MotionViewer::Buffer->new(2, \@vertices);
 }
 
 sub create_cylinder {
@@ -210,7 +227,7 @@ sub create_cylinder {
     }
     my @vertices = map { ($_->x, $_->y, $_->z) } @vlist;
     $num_vertices_cylinder = @vertices / (3 * 2);
-    $cylinder_buffer = MotionViewer::Buffer->new(2, @vertices);
+    $cylinder_buffer = MotionViewer::Buffer->new(2, \@vertices);
 }
 
 sub create_cone {
@@ -238,7 +255,7 @@ sub create_cone {
     }
     my @vertices = map { ($_->x, $_->y, $_->z) } @vlist;
     $num_vertices_cone = @vertices / (3 * 2);
-    $cone_buffer = MotionViewer::Buffer->new(2, @vertices);
+    $cone_buffer = MotionViewer::Buffer->new(2, \@vertices);
 }
 
 sub draw_floor {
@@ -311,19 +328,19 @@ sub draw_cone {
 }
 
 sub draw_axis {
-    die "usage: draw_cone(x1, y1, z1, x2, y2, z2)" if @_ < 6;
+    die "usage: draw_axis(x1, y1, z1, x2, y2, z2)" if @_ < 6;
     my ($x1, $y1, $z1, $x2, $y2, $z2) = @_;
-    my ($r1, $r2, $h) = (1, 2, 6);
+    my ($r1, $r2, $h) = (0.005, 0.01, 0.03);
     my $a = GLM::Vec3->new($x1, $y1, $z1);
     my $b = GLM::Vec3->new($x2, $y2, $z2);
     my $v = ($b - $a)->normalized;
-    my $c = $b + 6 * $v;
+    my $c = $b + $h * $v;
     draw_cylinder($a->x, $a->y, $a->z, $b->x, $b->y, $b->z, $r1);
     draw_cone($b->x, $b->y, $b->z, $c->x, $c->y, $c->z, $r2);
 }
 
 sub draw_lines {
-    my $line_buffer = MotionViewer::Buffer->new(1, @_);
+    my $line_buffer = MotionViewer::Buffer->new(1, \@_);
     $line_buffer->bind;
     glDrawArrays(GL_LINES, 0, @_ / 3);
 }
@@ -371,12 +388,24 @@ sub destroy_shadow_map {
 }
 
 my ($prev_x, $prev_y, $prev_z);
-my ($prev_x_weight, $prev_y_weight, $prev_z_weight) = (1, 1, 0);
+my ($prev_x_weight, $prev_y_weight, $prev_z_weight) = (0.8, 0.8, 0.8);
+my $auto_center = 1;
 
 sub render {
+    if ($auto_center) {
+        my ($x, $y, $z) = @{$positions[$frame]}[3 .. 5];
+        $x = $prev_x_weight * $prev_x + (1 - $prev_x_weight) * $x;
+        $y = $prev_y_weight * $prev_y + (1 - $prev_y_weight) * $y;
+        $z = $prev_z_weight * $prev_z + (1 - $prev_z_weight) * $z;
+        $camera->center(GLM::Vec3->new($x, $y, $z));
+        $camera->update_view_matrix;
+        ($prev_x, $prev_y, $prev_z) = ($x, $y, $z); 
+    }
+
     glClearColor(0.529, 0.808, 0.922, 0.0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
 
     create_shadow_map;
 
@@ -400,6 +429,53 @@ sub render {
     $skeleton->shader($shader);
     $skeleton->draw;
     $shader->set_int('enableShadow', 0);
+    $shader->set_vec3('color', $green);
+    
+    my @cts = @{$contacts[$frame]};
+    while (@cts) {
+	my @a;
+	my ($px, $py, $pz, $fx, $fy, $fz) = @a = splice @cts, 0, 6;
+	my $s = 0.005;
+	next if abs($fx ** 2 + $fy ** 2 + $fz ** 2) < 1e-6;
+	draw_axis($px, $py, $pz,
+	    $px + $s * $fx,
+	    $py + $s * $fy,
+	    $pz + $s * $fz,
+	);
+    }
+
+    my ($px, $py, $pz, $vx, $vy, $vz);
+    $shader->set_vec3('color', $red);
+    #($px, $py, $pz, $vx, $vy, $vz) = @{$coms[$frame]};
+    #if (abs($vx ** 2 + $vy ** 2 + $vz ** 2) > 1e-6) {
+    #    my $s = 1.0;
+    #    draw_axis($px, $py, $pz,
+    #        $px + $s * $vx,
+    #        $py + $s * $vy,
+    #        $pz + $s * $vz,
+    #    );
+    #}
+    #$shader->set_vec3('color', $blue);
+    #($px, $py, $pz, $vx, $vy, $vz) = @{$kin_coms[$frame]};
+    #if (abs($vx ** 2 + $vy ** 2 + $vz ** 2) > 1e-6) {
+    #    my $s = 1.0;
+    #    draw_axis($px, $py, $pz,
+    #        $px + $s * $vx,
+    #        $py + $s * $vy,
+    #        $pz + $s * $vz,
+    #    );
+    #}
+
+    #glDisable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    $mesh_shader->use;
+    $mesh_shader->set_mat4('view', $camera->view_matrix);
+    $mesh_shader->set_mat4('proj', $camera->proj_matrix);
+    $mesh_shader->set_float('alpha', 0.5);
+    $mesh_shader->set_vec3('color', $blue);
+    $mesh_shader->set_mat4('model', $identity_mat);
+    &draw_mesh;
+
 
     glutSwapBuffers();
     if ($recording) {
@@ -410,8 +486,21 @@ sub render {
 }
 
 sub timer {
+    print("e\n");
     if ($animate) {
-        glutTimerFunc(1.0 / $fps * 1000, \&timer);
+	if ($frame + 1 < $end_frame) {
+	    ++$frame;
+	    $skeleton->set_positions(@{$positions[$frame]});
+	    #glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
+	    #glBufferSubData_c(GL_ARRAY_BUFFER, 0, $batch_size, $vertices_array->ptr + $frame * $batch_size);
+	    #glBindBuffer(GL_ARRAY_BUFFER, 0);
+	}
+	print("a\n");
+        if (glutGetWindow == 0) {
+            return;
+        }
+        glutTimerFunc(1.0 / $fps * 1000, \&timer, 0);
+	print("b\n");
         glutPostRedisplay;
     }
 }
@@ -421,6 +510,32 @@ sub keyboard {
     if ($key == 27) { # ESC
         destroy_shadow_map;
         glutDestroyWindow($win_id);
+    } elsif (chr($key) eq ' ') {
+        $animate = !$animate;
+        if ($animate) {
+	    print("c\n");
+	    #glutTimerFunc(1.0 / $fps * 1000, \&timer, 0);
+            glutTimerFunc(1000, \&timer, 0);
+	    print("d\n");
+        }
+    } elsif (lc(chr($key)) eq 'f') {
+	if ($frame + 1 < $end_frame) {
+	    ++$frame;
+	    $skeleton->set_positions(@{$positions[$frame]});
+	    glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
+	    glBufferSubData_c(GL_ARRAY_BUFFER, 0, $batch_size, $vertices_array->ptr + $frame * $batch_size);
+	    glBindBuffer(GL_ARRAY_BUFFER, 0);
+	    glutPostRedisplay;
+	}
+    } elsif (lc(chr($key)) eq 'b') {
+	if ($frame > $start_frame) {
+	    --$frame;
+	    $skeleton->set_positions(@{$positions[$frame]});
+	    glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
+	    glBufferSubData_c(GL_ARRAY_BUFFER, 0, $batch_size, $vertices_array->ptr + $frame * $batch_size);
+	    glBindBuffer(GL_ARRAY_BUFFER, 0);
+	    glutPostRedisplay;
+	}
     } elsif (lc(chr($key)) eq 'v') {
         $recording = !$recording;
         if ($recording) {
@@ -451,13 +566,15 @@ sub keyboard {
         print "pitch: ", $camera->pitch, "\n";
         print "distance: ", $camera->distance, "\n";
         print "center: ", $camera->center, "\n";
-	#print "frame #: $frame\n";
+	print "frame #: $frame\n";
     } elsif (lc(chr($key)) eq 'h') {
         print <<'HELP';
 
 Keyboard
     ESC: exit.
     Space: animate.
+    F: next frame.
+    B: previous frame.
     V: record video.
     S: screen shot.
     9: decrease alpha.
@@ -507,10 +624,12 @@ die "glewInit failed" unless glewInit() == GLEW_OK;
 
 glEnable(GL_DEPTH_TEST);
 glEnable(GL_BLEND);
+glEnable(GL_CULL_FACE);
 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 $shader = MotionViewer::Shader->load(File::Spec->catdir($Bin, 'shaders/simple.vs'), File::Spec->catdir($Bin, 'shaders/simple.fs'));
 $shadow_map_shader = MotionViewer::Shader->load(File::Spec->catdir($Bin, 'shaders/shadow_map.vs'), File::Spec->catdir($Bin, 'shaders/shadow_map.fs'));
 $primitive_shader = MotionViewer::Shader->load(File::Spec->catdir($Bin, 'shaders/primitive.vs'), File::Spec->catdir($Bin, 'shaders/primitive.fs'));
+$mesh_shader = MotionViewer::Shader->load(File::Spec->catdir($Bin, 'shaders/mesh.vs'), File::Spec->catdir($Bin, 'shaders/mesh.fs'));
 $camera = MotionViewer::Camera->new(aspect => $screen_width / $screen_height);
 if (defined($camera_cfg_file)) {
     open my $fh, '<', $camera_cfg_file or die "cannot open $camera_cfg_file";
@@ -539,6 +658,10 @@ $shader->set_vec3('lightIntensity', GLM::Vec3->new(1));
 $shader->set_vec3('lightDir', GLM::Vec3->new(-1)->normalized);
 $shader->set_int('checker', 0);
 
+$mesh_shader->use;
+$mesh_shader->set_vec3('lightIntensity', GLM::Vec3->new(1));
+$mesh_shader->set_vec3('lightDir', GLM::Vec3->new(-1)->normalized);
+
 create_floor;
 create_cube;
 create_sphere;
@@ -546,14 +669,96 @@ create_cylinder;
 create_cone;
 init_shadow_map;
 
-my @positions;
-open my $fh, '<', 'positions.txt';
+#my $dir = '/home/kevin/Documents/research/amass_inverse_dynamics/outdir/ours_root_f_0p00001';
+#my $dir = '/home/kevin/Documents/research/amass_inverse_dynamics/outdir/ours_no_root_force/';
+#my $dir = '/home/kevin/Documents/research/amass_inverse_dynamics/outdir/roll';
+#my $dir = '/home/kevin/Documents/research/amass_inverse_dynamics/outdir/ours_no_root_force_mult_n_2/';
+#my $dir = '/home/kevin/Documents/research/amass_inverse_dynamics/outdir/ours_root_f_0p00001_t_0p95/';
+my $dir = '/home/kevin/Documents/research/amass_inverse_dynamics/outdir/ours_no_root_force_mult_n_2_MC_adjusted/';
+my $fh;
+open $fh, '<', "$dir/positions.txt";
 while (<$fh>) {
     chomp;
     push @positions, [split];
 }
-$skeleton = MotionViewer::Skeleton->load('character.json');
+
+open $fh, '<', "$dir/contact_forces.txt";
+while (<$fh>) {
+    chomp;
+    push @contacts, [split];
+}
+
+#open $fh, '<', "$dir/coms.txt";
+#while (<$fh>) {
+#    chomp;
+#    push @coms, [split];
+#}
+#
+#open $fh, '<', "$dir/kin_coms.txt";
+#while (<$fh>) {
+#    chomp;
+#    push @kin_coms, [split];
+#}
+
+#$skeleton = MotionViewer::Skeleton->load('character.json');
+$skeleton = MotionViewer::Skeleton->load('/home/kevin/Documents/research/amass_inverse_dynamics/data/character.json');
 $skeleton->shader($shader);
-$skeleton->set_positions(@{$positions[0]});
+$skeleton->set_positions(@{$positions[$frame]});
+($prev_x, $prev_y, $prev_z) = @{$positions[$frame]}[3 .. 5];
+
+my ($n, $m, $d);
+
+open $fh, '<', 'ours/faces.bin';
+#open $fh, '<', "$dir/faces.bin";
+$head = <$fh>;
+($n, $m) = split ' ', $head;
+my $num_elem = $n * $m;
+$faces_size = $n * $m * $int_size;
+read($fh, $faces_buffer, $faces_size);
+print("faces buffer: ", length($faces_buffer) / 1024, " KB\n");
+close $fh;
+
+open $fh, '<', 'ours/vertices.bin';
+#open $fh, '<', "$dir/vertices.bin";
+$head = <$fh>;
+($n, $m, $d) = split ' ', $head;
+$batch_size = $m * $d * $int_size;
+$vertices_size = $n * $m * $d * $float_size;
+read($fh, $vertices_buffer, $vertices_size);
+print("vertice buffer: ", length($vertices_buffer) / (1024 ** 2), " MB\n");
+close $fh;
+
+$mesh_vao_array = OpenGL::Array->new(1, GL_INT);
+glGenVertexArrays_c(1, $mesh_vao_array->ptr);
+$mesh_vao = ($mesh_vao_array->retrieve(0, 1))[0];
+glBindVertexArray($mesh_vao);
+
+$mesh_vbo_array = OpenGL::Array->new(1, GL_INT);
+glGenBuffers_c(1, $mesh_vbo_array->ptr);
+$mesh_vbo = ($mesh_vbo_array->retrieve(0, 1))[0];
+glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
+$vertices_array = OpenGL::Array->new_scalar(GL_FLOAT, $vertices_buffer, length($vertices_buffer));
+glBufferData_c(GL_ARRAY_BUFFER, $batch_size, $vertices_array->ptr + $frame * $batch_size, GL_DYNAMIC_DRAW);
+#glBufferData_c(GL_ARRAY_BUFFER, 100 * $batch_size, $vertices_array->ptr + $frame * $batch_size, GL_STATIC_DRAW);
+glVertexAttribPointer_c(0, 3, GL_FLOAT, GL_FALSE, 3 * $float_size, 0);
+glEnableVertexAttribArray(0);
+
+$mesh_ebo_array = OpenGL::Array->new(1, GL_INT);
+glGenBuffers_c(1, $mesh_ebo_array->ptr);
+$mesh_ebo = ($mesh_ebo_array->retrieve(0, 1))[0];
+glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, $mesh_ebo);
+$indices_array = OpenGL::Array->new_scalar(GL_UNSIGNED_INT, $faces_buffer, length($faces_buffer));
+glBufferData_c(GL_ELEMENT_ARRAY_BUFFER, length($faces_buffer), $indices_array->ptr, GL_STATIC_DRAW);
+
+#glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0); # why need to delete this to avoid the crash??
+glBindBuffer(GL_ARRAY_BUFFER, 0);
+glBindVertexArray(0);
+
+sub draw_mesh {
+    glBindVertexArray($mesh_vao);
+    glDrawElements_c(GL_TRIANGLES, $num_elem, GL_UNSIGNED_INT, 0);
+    #glDrawElementsBaseVertex_c(GL_TRIANGLES, $num_elem, GL_UNSIGNED_INT, 0, $frame * $m);
+    glBindVertexArray(0);
+}
 
 glutMainLoop();
