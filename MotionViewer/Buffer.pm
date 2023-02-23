@@ -4,6 +4,7 @@ use Carp;
 use OpenGL::Modern qw(:all);
 use OpenGL::Array;
 
+# TODO: add support for different attribute layouts
 sub new {
     my $class = shift;
     croak 'usage: ' . $class . '->new($number_of_attributes, \@vertices, \@indices)' if @_ < 1;
@@ -34,7 +35,8 @@ sub new {
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, $this->ebo);
 	my $indices_array = OpenGL::Array->new_list(GL_UNSIGNED_INT, @indices);
 	glBufferData_c(GL_ELEMENT_ARRAY_BUFFER, $indices_array->offset(scalar(@indices)) - $indices_array->ptr, $indices_array->ptr, GL_STATIC_DRAW);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	# Should not add following?
+	#glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
     }
     
     glBindBuffer(GL_ARRAY_BUFFER, 0);
