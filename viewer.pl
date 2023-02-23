@@ -17,6 +17,12 @@ use MotionViewer::Skeleton;
 use strict;
 use warnings;
 
+my ($dir, $mesh_dir);
+GetOptions(
+    'dir=s'	    => \$dir,
+    'mesh_dir=s'    => \$mesh_dir,
+);
+
 my $win_id;
 my ($screen_width, $screen_height) = (1280, 720);
 my ($shader, $buffer, $camera);
@@ -76,6 +82,7 @@ my $frame = $start_frame;
 my $skeleton;
 my @positions;
 my @contacts;
+my @errors;
 my @coms;
 my @kin_coms;
 
@@ -586,6 +593,9 @@ Mouse
 
 HELP
     }
+    if (lc(chr($key)) eq 'f' || lc(chr($key)) eq 'b') {
+	#print "error: $errors[$frame]\n";
+    }
     $camera->keyboard_handler(@_);
 }
 
@@ -669,12 +679,6 @@ create_cylinder;
 create_cone;
 init_shadow_map;
 
-#my $dir = '/home/kevin/Documents/research/amass_inverse_dynamics/outdir/ours_root_f_0p00001';
-#my $dir = '/home/kevin/Documents/research/amass_inverse_dynamics/outdir/ours_no_root_force/';
-#my $dir = '/home/kevin/Documents/research/amass_inverse_dynamics/outdir/roll';
-#my $dir = '/home/kevin/Documents/research/amass_inverse_dynamics/outdir/ours_no_root_force_mult_n_2/';
-#my $dir = '/home/kevin/Documents/research/amass_inverse_dynamics/outdir/ours_root_f_0p00001_t_0p95/';
-my $dir = '/home/kevin/Documents/research/amass_inverse_dynamics/outdir/ours_no_root_force_mult_n_2_MC_adjusted/';
 my $fh;
 open $fh, '<', "$dir/positions.txt";
 while (<$fh>) {
@@ -686,6 +690,11 @@ open $fh, '<', "$dir/contact_forces.txt";
 while (<$fh>) {
     chomp;
     push @contacts, [split];
+}
+open $fh, '<', "$dir/errors.txt";
+while (<$fh>) {
+    chomp;
+    push @errors, $_;
 }
 
 #open $fh, '<', "$dir/coms.txt";
@@ -708,8 +717,7 @@ $skeleton->set_positions(@{$positions[$frame]});
 
 my ($n, $m, $d);
 
-open $fh, '<', 'ours/faces.bin';
-#open $fh, '<', "$dir/faces.bin";
+open $fh, '<', "$mesh_dir/faces.bin";
 $head = <$fh>;
 ($n, $m) = split ' ', $head;
 my $num_elem = $n * $m;
@@ -718,8 +726,7 @@ read($fh, $faces_buffer, $faces_size);
 print("faces buffer: ", length($faces_buffer) / 1024, " KB\n");
 close $fh;
 
-open $fh, '<', 'ours/vertices.bin';
-#open $fh, '<', "$dir/vertices.bin";
+open $fh, '<', "$mesh_dir/vertices.bin";
 $head = <$fh>;
 ($n, $m, $d) = split ' ', $head;
 $batch_size = $m * $d * $int_size;
