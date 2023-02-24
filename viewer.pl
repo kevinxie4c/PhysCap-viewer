@@ -1,12 +1,14 @@
 #!/usr/bin/env perl
 use Getopt::Long;
 use OpenGL::Modern qw(:all);
-use OpenGL::GLUT qw(:all);
+use OpenGL::GLFW qw(:all);
 use OpenGL::Array;
 use GLM;
 use Math::Trig;
 use Image::PNG::Libpng ':all';
 use Image::PNG::Const ':all';
+use POSIX qw(EXIT_SUCCESS EXIT_FAILURE);
+use Time::HiRes qw(time);
 
 use FindBin qw($Bin);
 use lib $Bin;
@@ -22,11 +24,13 @@ GetOptions(
     'dir=s'	    => \$dir,
     'mesh_dir=s'    => \$mesh_dir,
 );
-
-my $win_id;
+my $window;
 my ($screen_width, $screen_height) = (1280, 720);
 my ($shader, $buffer, $camera);
 my $mesh_shader;
+
+my $updated = 1;
+my $prev_time;
 
 my $orange = GLM::Vec3->new(1.0, 0.5, 0.2);
 my $red    = GLM::Vec3->new(1.0, 0.0, 0.0);
@@ -42,7 +46,8 @@ my $identity_mat = GLM::Mat4->new(
 );
 
 my $animate = 0;
-my $fps = 40; # 0.1 second per iteration. 10 Hz.
+my $fps = 60;
+
 my $ffmpeg = $^O eq 'MSWin32' ? 'ffmpeg.exe': 'ffmpeg';
 my $fh_ffmpeg;
 my $recording = 0;
@@ -484,14 +489,31 @@ sub render {
     &draw_mesh;
 
 
-    glutSwapBuffers();
-    if ($recording) {
+    glfwSwapBuffers($window);
+    if ($recording && $updated) {
         my $buffer = OpenGL::Array->new($screen_width * $screen_height * 4, GL_BYTE);
         glReadPixels_c(0, 0, $screen_width, $screen_height, GL_RGBA, GL_UNSIGNED_BYTE, $buffer->ptr);
         print $fh_ffmpeg $buffer->retrieve_data(0, $screen_width * $screen_height * 4);
+	$updated = 0;
     }
+
+    if ($animate) {
+	my $t = time;
+	if ($t - $prev_time  > 1 / $fps) {
+	    $prev_time = $t;
+	    ++$frame;
+	    $updated = 1;
+	    $skeleton->set_positions(@{$positions[$frame]});
+	    glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
+	    glBufferSubData_c(GL_ARRAY_BUFFER, 0, $batch_size, $vertices_array->ptr + $frame * $batch_size);
+	    glBindBuffer(GL_ARRAY_BUFFER, 0);
+	}
+    }
+
+    glfwPollEvents();
 }
 
+=comment
 sub timer {
     print("e\n");
     if ($animate) {
@@ -511,71 +533,74 @@ sub timer {
         glutPostRedisplay;
     }
 }
+=cut
 
 sub keyboard {
-    my ($key) = @_;
-    if ($key == 27) { # ESC
-        destroy_shadow_map;
-        glutDestroyWindow($win_id);
-    } elsif (chr($key) eq ' ') {
-        $animate = !$animate;
-        if ($animate) {
-	    print("c\n");
-	    #glutTimerFunc(1.0 / $fps * 1000, \&timer, 0);
-            glutTimerFunc(1000, \&timer, 0);
-	    print("d\n");
-        }
-    } elsif (lc(chr($key)) eq 'f') {
-	if ($frame + 1 < $end_frame) {
-	    ++$frame;
-	    $skeleton->set_positions(@{$positions[$frame]});
-	    glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
-	    glBufferSubData_c(GL_ARRAY_BUFFER, 0, $batch_size, $vertices_array->ptr + $frame * $batch_size);
-	    glBindBuffer(GL_ARRAY_BUFFER, 0);
-	    glutPostRedisplay;
-	}
-    } elsif (lc(chr($key)) eq 'b') {
-	if ($frame > $start_frame) {
-	    --$frame;
-	    $skeleton->set_positions(@{$positions[$frame]});
-	    glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
-	    glBufferSubData_c(GL_ARRAY_BUFFER, 0, $batch_size, $vertices_array->ptr + $frame * $batch_size);
-	    glBindBuffer(GL_ARRAY_BUFFER, 0);
-	    glutPostRedisplay;
-	}
-    } elsif (lc(chr($key)) eq 'v') {
-        $recording = !$recording;
-        if ($recording) {
-            open $fh_ffmpeg, '|-', "$ffmpeg -r $fps -f rawvideo -pix_fmt rgba -s ${screen_width}x${screen_height} -i - -threads 0 -preset fast -y -pix_fmt yuv420p -crf 1 -vf vflip output.mp4";
-            binmode $fh_ffmpeg;
-        } else {
-            close $fh_ffmpeg;
-        }
-    } elsif (lc(chr($key)) eq 's') {
-        my $png = create_write_struct;
-        $png->set_IHDR({
-                height     => $screen_height,
-                width      => $screen_width,
-                bit_depth  => 8,
-                color_type => PNG_COLOR_TYPE_RGB_ALPHA,
-            });
-        my $buffer = OpenGL::Array->new($screen_width * $screen_height * 4, GL_BYTE);
-        glReadBuffer(GL_FRONT);
-        glReadPixels_c(0, 0, $screen_width, $screen_height, GL_RGBA, GL_UNSIGNED_BYTE, $buffer->ptr);
-        my @rows;
-        for (my $i = 0; $i < $screen_height; ++$i) {
-            unshift @rows, $buffer->retrieve_data($i * $screen_width * 4, $screen_width * 4); # use unshift instead of push because we want to flip the png along y axis
-        }
-        $png->set_rows(\@rows);
-        $png->write_png_file(sprintf('img%03d.png', $png_counter++));
-    } elsif (lc(chr($key)) eq 'i') {
-        print "yaw: ", $camera->yaw, "\n";
-        print "pitch: ", $camera->pitch, "\n";
-        print "distance: ", $camera->distance, "\n";
-        print "center: ", $camera->center, "\n";
-	print "frame #: $frame\n";
-    } elsif (lc(chr($key)) eq 'h') {
-        print <<'HELP';
+    my (undef, $key, undef, $action) = @_;
+    if ($action == GLFW_PRESS) {
+	if ($key == GLFW_KEY_ESCAPE) { # ESC
+	    destroy_shadow_map;
+	    glfwDestroyWindow($window);
+	    glfwTerminate();
+	    exit(EXIT_SUCCESS);
+	} elsif ($key == GLFW_KEY_SPACE) {
+	    $animate = !$animate;
+	    $updated = 1;
+	    $prev_time = time;
+	} elsif ($key == GLFW_KEY_F) {
+	    if ($frame + 1 < $end_frame) {
+		++$frame;
+		$skeleton->set_positions(@{$positions[$frame]});
+		glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
+		glBufferSubData_c(GL_ARRAY_BUFFER, 0, $batch_size, $vertices_array->ptr + $frame * $batch_size);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		$updated = 1;
+		#glutPostRedisplay;
+	    }
+	} elsif ($key == GLFW_KEY_B) {
+	    if ($frame > $start_frame) {
+		--$frame;
+		$skeleton->set_positions(@{$positions[$frame]});
+		glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
+		glBufferSubData_c(GL_ARRAY_BUFFER, 0, $batch_size, $vertices_array->ptr + $frame * $batch_size);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		$updated = 1;
+		#glutPostRedisplay;
+	    }
+	} elsif ($key == GLFW_KEY_V) {
+	    $recording = !$recording;
+	    if ($recording) {
+		open $fh_ffmpeg, '|-', "$ffmpeg -r $fps -f rawvideo -pix_fmt rgba -s ${screen_width}x${screen_height} -i - -threads 0 -preset fast -y -pix_fmt yuv420p -crf 1 -vf vflip output.mp4";
+		binmode $fh_ffmpeg;
+	    } else {
+		close $fh_ffmpeg;
+	    }
+	    $updated = 1;
+	} elsif (GLFW_KEY_S) {
+	    my $png = create_write_struct;
+	    $png->set_IHDR({
+		    height     => $screen_height,
+		    width      => $screen_width,
+		    bit_depth  => 8,
+		    color_type => PNG_COLOR_TYPE_RGB_ALPHA,
+		});
+	    my $buffer = OpenGL::Array->new($screen_width * $screen_height * 4, GL_BYTE);
+	    glReadBuffer(GL_FRONT);
+	    glReadPixels_c(0, 0, $screen_width, $screen_height, GL_RGBA, GL_UNSIGNED_BYTE, $buffer->ptr);
+	    my @rows;
+	    for (my $i = 0; $i < $screen_height; ++$i) {
+		unshift @rows, $buffer->retrieve_data($i * $screen_width * 4, $screen_width * 4); # use unshift instead of push because we want to flip the png along y axis
+	    }
+	    $png->set_rows(\@rows);
+	    $png->write_png_file(sprintf('img%03d.png', $png_counter++));
+	} elsif ($key == GLFW_KEY_I) {
+	    print "yaw: ", $camera->yaw, "\n";
+	    print "pitch: ", $camera->pitch, "\n";
+	    print "distance: ", $camera->distance, "\n";
+	    print "center: ", $camera->center, "\n";
+	    print "frame #: $frame\n";
+	} elsif ($key == GLFW_KEY_H) {
+	    print <<'HELP';
 
 Keyboard
     ESC: exit.
@@ -592,9 +617,29 @@ Mouse
     Right button: zoom.
 
 HELP
-    }
-    if (lc(chr($key)) eq 'f' || lc(chr($key)) eq 'b') {
-	#print "error: $errors[$frame]\n";
+	}
+    } elsif ($action == GLFW_REPEAT) {
+	if ($key == GLFW_KEY_F) {
+	    if ($frame + 1 < $end_frame) {
+		++$frame;
+		$skeleton->set_positions(@{$positions[$frame]});
+		glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
+		glBufferSubData_c(GL_ARRAY_BUFFER, 0, $batch_size, $vertices_array->ptr + $frame * $batch_size);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		$updated = 1;
+		#glutPostRedisplay;
+	    }
+	} elsif ($key == GLFW_KEY_B) {
+	    if ($frame > $start_frame) {
+		--$frame;
+		$skeleton->set_positions(@{$positions[$frame]});
+		glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
+		glBufferSubData_c(GL_ARRAY_BUFFER, 0, $batch_size, $vertices_array->ptr + $frame * $batch_size);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		$updated = 1;
+		#glutPostRedisplay;
+	    }
+	}
     }
     $camera->keyboard_handler(@_);
 }
@@ -608,12 +653,13 @@ sub mouse {
 }
 
 sub motion {
-    $camera->motion_handler(@_);
+    #$camera->motion_handler(@_);
     #$shader->use;
     #$shader->set_mat4('view', $camera->view_matrix);
-    glutPostRedisplay;
+    #glutPostRedisplay;
 }
 
+=comment
 glutInit;
 glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE);
 glutInitWindowSize($screen_width, $screen_height);
@@ -629,6 +675,23 @@ glutReshapeFunc(sub {
         #$shader->use;
         #$shader->set_mat4('proj', $camera->proj_matrix);
     });
+=cut
+if (!glfwInit()) {
+    print "glfwInit() failed\n";
+    exit(EXIT_FAILURE);
+}
+glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+
+$window = glfwCreateWindow($screen_width, $screen_height, 'viewer', NULL, NULL);
+if (!$window) {
+    print "glfwCreateWindow() failed\n";
+    glfwTerminate();
+    exit(EXIT_FAILURE);
+}
+glfwSetKeyCallback($window, \&keyboard);
+
+glfwMakeContextCurrent($window);
 
 die "glewInit failed" unless glewInit() == GLEW_OK;
 
@@ -768,4 +831,10 @@ sub draw_mesh {
     glBindVertexArray(0);
 }
 
-glutMainLoop();
+while (!glfwWindowShouldClose($window)) {
+    render();
+}
+
+glfwDestroyWindow($window);
+glfwTerminate();
+exit(EXIT_SUCCESS);

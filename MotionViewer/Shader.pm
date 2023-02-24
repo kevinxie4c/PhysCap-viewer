@@ -1,7 +1,7 @@
 package MotionViewer::Shader;
 
 use OpenGL::Modern qw(:all);
-use OpenGL::Array;
+#use OpenGL::Array;
 use File::Slurp;
 
 sub load {

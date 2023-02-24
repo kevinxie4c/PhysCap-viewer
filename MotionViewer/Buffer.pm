@@ -2,7 +2,7 @@ package MotionViewer::Buffer;
 
 use Carp;
 use OpenGL::Modern qw(:all);
-use OpenGL::Array;
+#use OpenGL::Array;
 
 # TODO: add support for different attribute layouts
 sub new {

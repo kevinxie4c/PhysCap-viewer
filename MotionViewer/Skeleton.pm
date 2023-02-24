@@ -8,7 +8,7 @@ use warnings;
 sub load {
     my $class = shift;
     my $fn = shift;
-    my $hash = decode_json(read_file($fn));
+    my $hash = decode_json(scalar(read_file($fn)));
     my $root = MotionViewer::Joint->new($hash);
     my $this = {
 	root => $root,

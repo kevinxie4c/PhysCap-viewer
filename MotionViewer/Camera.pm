@@ -1,6 +1,6 @@
 package MotionViewer::Camera;
 
-use OpenGL::GLUT qw(:constants);
+#use OpenGL::GLUT qw(:constants);
 use GLM;
 use Math::Trig;
 
