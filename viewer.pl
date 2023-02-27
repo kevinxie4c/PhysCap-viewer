@@ -535,7 +535,7 @@ sub timer {
 }
 =cut
 
-sub keyboard {
+sub key_cb {
     my (undef, $key, undef, $action) = @_;
     if ($action == GLFW_PRESS) {
 	if ($key == GLFW_KEY_ESCAPE) { # ESC
@@ -644,19 +644,20 @@ HELP
     $camera->keyboard_handler(@_);
 }
 
-sub keyboard_up {
-    $camera->keyboard_up_handler(@_);
+sub mouse_button_cb {
+    $camera->mouse_button_handler(@_);
 }
 
-sub mouse {
-    $camera->mouse_handler(@_);
+sub cursor_pos_cb {
+    $camera->cursor_pos_handler(@_);
+    $shader->use;
+    $shader->set_mat4('view', $camera->view_matrix);
 }
 
-sub motion {
-    #$camera->motion_handler(@_);
-    #$shader->use;
-    #$shader->set_mat4('view', $camera->view_matrix);
-    #glutPostRedisplay;
+sub scroll_cb{
+    $camera->scroll_handler(@_);
+    $shader->use;
+    $shader->set_mat4('view', $camera->view_matrix);
 }
 
 =comment
@@ -689,7 +690,10 @@ if (!$window) {
     glfwTerminate();
     exit(EXIT_FAILURE);
 }
-glfwSetKeyCallback($window, \&keyboard);
+glfwSetKeyCallback($window, \&key_cb);
+glfwSetMouseButtonCallback($window, \&mouse_button_cb);
+glfwSetCursorPosCallback($window, \&cursor_pos_cb);
+glfwSetScrollCallback($window, \&scroll_cb);
 
 glfwMakeContextCurrent($window);
 

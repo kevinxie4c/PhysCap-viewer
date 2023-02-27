@@ -2,6 +2,7 @@ package MotionViewer::Camera;
 
 #use OpenGL::GLUT qw(:constants);
 use GLM;
+use OpenGL::GLFW qw(:all);
 use Math::Trig;
 
 sub new {
@@ -108,59 +109,56 @@ sub proj_matrix {
 }
 
 sub keyboard_handler {
-    my ($this, $key) = @_;
-    if ($key == ord('X') || $key == ord('x')) {
-        $this->{x_down} = 1;
-    } elsif ($key == ord('Y') || $key == ord('y')) {
-        $this->{y_down} = 1;
-    } elsif ($key == ord('Z') || $key == ord('z')) {
-        $this->{z_down} = 1;
+    my ($this, undef, $key, undef, $action) = @_;
+    if ($action == GLFW_PRESS) {
+	if ($key == GLFW_KEY_X) {
+	    $this->{x_down} = 1;
+	} elsif ($key == GLFW_KEY_Y) {
+	    $this->{y_down} = 1;
+	} elsif ($key == GLFW_KEY_Z) {
+	    $this->{z_down} = 1;
+	}
+    } elsif ($action == GLFW_RELEASE) {
+	if ($key == GLFW_KEY_X) {
+	    $this->{x_down} = 0;
+	} elsif ($key == GLFW_KEY_Y) {
+	    $this->{y_down} = 0;
+	} elsif ($key == GLFW_KEY_Z) {
+	    $this->{z_down} = 0;
+	}
     }
 }
 
-sub keyboard_up_handler {
-    my ($this, $key) = @_;
-    if ($key == ord('X') || $key == ord('x')) {
-        $this->{x_down} = 0;
-    } elsif ($key == ord('Y') || $key == ord('y')) {
-        $this->{y_down} = 0;
-    } elsif ($key == ord('Z') || $key == ord('z')) {
-        $this->{z_down} = 0;
-    }
-}
-
-sub mouse_handler {
-    my ($this, $button, $state, $x, $y) = @_;
-    if ($state == GLUT_DOWN) {
-        if ($button == GLUT_LEFT_BUTTON) {
+sub mouse_button_handler {
+    my ($this, undef, $button, $action) = @_;
+    if ($action == GLFW_PRESS) {
+        if ($button == GLFW_MOUSE_BUTTON_LEFT) {
             $this->{left_button} = 1;
-        } elsif ($button == GLUT_RIGHT_BUTTON) {
+        } elsif ($button == GLFW_MOUSE_BUTTON_RIGHT) {
             $this->{right_button} = 1;
         }
-    } elsif ($state == GLUT_UP) {
-        if ($button == GLUT_LEFT_BUTTON) {
+    } elsif ($action == GLFW_RELEASE) {
+        if ($button == GLFW_MOUSE_BUTTON_LEFT) {
             $this->{left_button} = 0;
-        } elsif ($button == GLUT_RIGHT_BUTTON) {
+        } elsif ($button == GLFW_MOUSE_BUTTON_RIGHT) {
             $this->{right_button} = 0;
         }
     }
-    $this->{last_x} = $x;
-    $this->{last_y} = $y;
 }
 
 my $rot_speed = 0.1;
-my $zoom_speed = 0.005;
+my $zoom_speed_cursor = 0.005;
+my $zoom_speed_scroll = 0.1;
 my $pan_speed = 0.005;
 
-sub motion_handler {
-    my ($this, $x, $y) = @_;
+sub cursor_pos_handler {
+    my ($this, undef, $x, $y) = @_;
     my $x_offset = $x - $this->{last_x};
     my $y_offset = $y - $this->{last_y};
     #print 'yaw: ' . $this->yaw . "\n";
     #print 'pitch: ' . $this->pitch . "\n";
     if ($this->{left_button}) {
         if ($this->{x_down}) {
-            my $p = $this->center;
             $this->center($this->center + GLM::Vec3->new($y_offset * $pan_speed, 0, 0));
         } elsif ($this->{y_down}) {
             $this->center($this->center + GLM::Vec3->new(0, $y_offset * $pan_speed, 0));
@@ -171,11 +169,17 @@ sub motion_handler {
             $this->pitch($this->pitch + $y_offset * $rot_speed);
         }
     } elsif ($this->{right_button}) {
-        $this->distance($this->distance + $y_offset * $zoom_speed);
+        $this->distance($this->distance + $y_offset * $zoom_speed_cursor);
     }
     $this->update_view_matrix;
     $this->{last_x} = $x;
     $this->{last_y} = $y;
+}
+
+sub scroll_handler {
+    my ($this, undef, $dx, $dy) = @_;
+    $this->distance($this->distance - $dy * $zoom_speed_scroll);
+    $this->update_view_matrix;
 }
 
 1;
