@@ -80,8 +80,7 @@ my $primitive_shader;
 
 GetOptions();
 
-my ($start_frame, $end_frame) = (0, 4600);
-#my ($start_frame, $end_frame) = (0, 500);
+my ($start_frame, $end_frame) = (0, undef);
 my $frame = $start_frame;
 
 my $skeleton;
@@ -501,7 +500,7 @@ sub render {
 	my $t = time;
 	if ($t - $prev_time  > 1 / $fps) {
 	    $prev_time = $t;
-	    ++$frame;
+	    ++$frame if $frame < $end_frame;
 	    $updated = 1;
 	    $skeleton->set_positions(@{$positions[$frame]});
 	    glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
@@ -512,28 +511,6 @@ sub render {
 
     glfwPollEvents();
 }
-
-=comment
-sub timer {
-    print("e\n");
-    if ($animate) {
-	if ($frame + 1 < $end_frame) {
-	    ++$frame;
-	    $skeleton->set_positions(@{$positions[$frame]});
-	    #glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
-	    #glBufferSubData_c(GL_ARRAY_BUFFER, 0, $batch_size, $vertices_array->ptr + $frame * $batch_size);
-	    #glBindBuffer(GL_ARRAY_BUFFER, 0);
-	}
-	print("a\n");
-        if (glutGetWindow == 0) {
-            return;
-        }
-        glutTimerFunc(1.0 / $fps * 1000, \&timer, 0);
-	print("b\n");
-        glutPostRedisplay;
-    }
-}
-=cut
 
 sub key_cb {
     my (undef, $key, undef, $action) = @_;
@@ -660,23 +637,6 @@ sub scroll_cb{
     $shader->set_mat4('view', $camera->view_matrix);
 }
 
-=comment
-glutInit;
-glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE);
-glutInitWindowSize($screen_width, $screen_height);
-$win_id = glutCreateWindow("Viewer");
-glutDisplayFunc(\&render);
-glutKeyboardFunc(\&keyboard);
-glutKeyboardUpFunc(\&keyboard_up);
-glutMouseFunc(\&mouse);
-glutMotionFunc(\&motion);
-glutReshapeFunc(sub {
-        ($screen_width, $screen_height) = @_;
-        $camera->aspect($screen_width / $screen_height);
-        #$shader->use;
-        #$shader->set_mat4('proj', $camera->proj_matrix);
-    });
-=cut
 if (!glfwInit()) {
     print "glfwInit() failed\n";
     exit(EXIT_FAILURE);
@@ -775,6 +735,8 @@ while (<$fh>) {
 #    chomp;
 #    push @kin_coms, [split];
 #}
+
+$end_frame = @positions - 1 unless defined $end_frame;
 
 #$skeleton = MotionViewer::Skeleton->load('character.json');
 $skeleton = MotionViewer::Skeleton->load('/home/kevin/Documents/research/amass_inverse_dynamics/data/character.json');
