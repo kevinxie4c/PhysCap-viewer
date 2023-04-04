@@ -20,9 +20,11 @@ use strict;
 use warnings;
 
 my ($dir, $mesh_dir);
+my $character = 'character.json';
 GetOptions(
     'dir=s'	    => \$dir,
     'mesh_dir=s'    => \$mesh_dir,
+    'character|j=s'   => \$character,
 );
 my $window;
 my ($screen_width, $screen_height) = (1280, 720);
@@ -442,17 +444,19 @@ sub render {
     $shader->set_int('enableShadow', 0);
     $shader->set_vec3('color', $green);
     
-    my @cts = @{$contacts[$frame]};
-    while (@cts) {
-	my @a;
-	my ($px, $py, $pz, $fx, $fy, $fz) = @a = splice @cts, 0, 6;
-	my $s = 0.005;
-	next if abs($fx ** 2 + $fy ** 2 + $fz ** 2) < 1e-6;
-	draw_axis($px, $py, $pz,
-	    $px + $s * $fx,
-	    $py + $s * $fy,
-	    $pz + $s * $fz,
-	);
+    if ($frame < @contacts) {
+	my @cts = @{$contacts[$frame]};
+	while (@cts) {
+	    my @a;
+	    my ($px, $py, $pz, $fx, $fy, $fz) = @a = splice @cts, 0, 6;
+	    my $s = 0.005;
+	    next if abs($fx ** 2 + $fy ** 2 + $fz ** 2) < 1e-6;
+	    draw_axis($px, $py, $pz,
+		$px + $s * $fx,
+		$py + $s * $fy,
+		$pz + $s * $fz,
+	    );
+	}
     }
 
     my ($px, $py, $pz, $vx, $vy, $vz);
@@ -555,7 +559,7 @@ sub key_cb {
 		close $fh_ffmpeg;
 	    }
 	    $updated = 1;
-	} elsif (GLFW_KEY_S) {
+	} elsif ($key == GLFW_KEY_S) {
 	    my $png = create_write_struct;
 	    $png->set_IHDR({
 		    height     => $screen_height,
@@ -588,6 +592,7 @@ Keyboard
     B: previous frame.
     V: record video.
     S: screen shot.
+    I: print info.
     9: decrease alpha.
     0: increase alpha.
 
@@ -715,15 +720,19 @@ while (<$fh>) {
     push @positions, [split];
 }
 
-open $fh, '<', "$dir/contact_forces.txt";
-while (<$fh>) {
-    chomp;
-    push @contacts, [split];
+if (-f "$dir/contact_forces.txt") {
+    open $fh, '<', "$dir/contact_forces.txt";
+    while (<$fh>) {
+	chomp;
+	push @contacts, [split];
+    }
 }
-open $fh, '<', "$dir/errors.txt";
-while (<$fh>) {
-    chomp;
-    push @errors, $_;
+if (-f "$dir/errors.txt") {
+    open $fh, '<', "$dir/errors.txt";
+    while (<$fh>) {
+	chomp;
+	push @errors, $_;
+    }
 }
 
 #open $fh, '<', "$dir/coms.txt";
@@ -740,8 +749,8 @@ while (<$fh>) {
 
 $end_frame = @positions - 1 unless defined $end_frame;
 
-#$skeleton = MotionViewer::Skeleton->load('character.json');
-$skeleton = MotionViewer::Skeleton->load('/home/kevin/Documents/research/amass_inverse_dynamics/data/character.json');
+$skeleton = MotionViewer::Skeleton->load($character);
+#$skeleton = MotionViewer::Skeleton->load('/home/kevin/Documents/research/amass_inverse_dynamics/data/character.json');
 $skeleton->shader($shader);
 $skeleton->set_positions(@{$positions[$frame]});
 ($prev_x, $prev_y, $prev_z) = @{$positions[$frame]}[3 .. 5];
