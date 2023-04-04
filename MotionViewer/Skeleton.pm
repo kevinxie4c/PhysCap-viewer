@@ -202,11 +202,11 @@ sub draw {
 #       +--------------+
 #      c                g
 #       
-#    z  |
+#    y  |
 #       |  x
 #       +----
 #        \
-#      y  \
+#      z  \
 sub create_box {
     my @vertices;
 
@@ -214,13 +214,13 @@ sub create_box {
     my ($dx, $dy, $dz) = ($wx / 2, $wy / 2, $wz / 2);
 
     my (@a, @b, @c, @d, @e, @f, @g, @h);
-    @a = ($px - $dx, $py - $dy, $pz + $dz);
+    @a = ($px - $dx, $py + $dy, $pz - $dz);
     @b = ($px - $dx, $py - $dy, $pz - $dz);
-    @c = ($px - $dx, $py + $dy, $pz - $dz);
+    @c = ($px - $dx, $py - $dy, $pz + $dz);
     @d = ($px - $dx, $py + $dy, $pz + $dz);
-    @e = ($px + $dx, $py - $dy, $pz + $dz);
+    @e = ($px + $dx, $py + $dy, $pz - $dz);
     @f = ($px + $dx, $py - $dy, $pz - $dz);
-    @g = ($px + $dx, $py + $dy, $pz - $dz);
+    @g = ($px + $dx, $py - $dy, $pz + $dz);
     @h = ($px + $dx, $py + $dy, $pz + $dz);
 
     my @n1 = (-1, 0, 0);
@@ -231,19 +231,19 @@ sub create_box {
     push @vertices, @g, @n2, @f, @n2, @e, @n2;
     push @vertices, @e, @n2, @h, @n2, @g, @n2;
 
-    my @n3 = (0, 1, 0);
+    my @n3 = (0, 0, 1);
     push @vertices, @d, @n3, @c, @n3, @g, @n3;
     push @vertices, @g, @n3, @h, @n3, @d, @n3;
 
-    my @n4 = (0, -1, 0);
+    my @n4 = (0, 0, -1);
     push @vertices, @f, @n4, @b, @n4, @a, @n4;
     push @vertices, @a, @n4, @e, @n4, @f, @n4;
 
-    my @n5 = (0, 0, 1);
+    my @n5 = (0, 1, 0);
     push @vertices, @a, @n5, @d, @n5, @h, @n5;
     push @vertices, @h, @n5, @e, @n5, @a, @n5;
 
-    my @n6 = (0, 0, -1);
+    my @n6 = (0, -1, 0);
     push @vertices, @g, @n6, @c, @n6, @b, @n6;
     push @vertices, @b, @n6, @f, @n6, @g, @n6;
 
