@@ -485,7 +485,9 @@ sub render {
     $mesh_shader->set_float('alpha', 0.5);
     $mesh_shader->set_vec3('color', $blue);
     $mesh_shader->set_mat4('model', $identity_mat);
-    &draw_mesh;
+    if (defined($mesh_dir)) {
+	&draw_mesh;
+    }
 
 
     glfwSwapBuffers($window);
@@ -503,9 +505,9 @@ sub render {
 	    ++$frame if $frame < $end_frame;
 	    $updated = 1;
 	    $skeleton->set_positions(@{$positions[$frame]});
-	    glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
-	    glBufferSubData_c(GL_ARRAY_BUFFER, 0, $batch_size, $vertices_array->ptr + $frame * $batch_size);
-	    glBindBuffer(GL_ARRAY_BUFFER, 0);
+	    if (defined($mesh_dir)) {
+		&update_mesh_buffer;
+	    }
 	}
     }
 
@@ -528,9 +530,9 @@ sub key_cb {
 	    if ($frame + 1 < $end_frame) {
 		++$frame;
 		$skeleton->set_positions(@{$positions[$frame]});
-		glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
-		glBufferSubData_c(GL_ARRAY_BUFFER, 0, $batch_size, $vertices_array->ptr + $frame * $batch_size);
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		if (defined($mesh_dir)) {
+		    &update_mesh_buffer;
+		}
 		$updated = 1;
 		#glutPostRedisplay;
 	    }
@@ -538,9 +540,9 @@ sub key_cb {
 	    if ($frame > $start_frame) {
 		--$frame;
 		$skeleton->set_positions(@{$positions[$frame]});
-		glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
-		glBufferSubData_c(GL_ARRAY_BUFFER, 0, $batch_size, $vertices_array->ptr + $frame * $batch_size);
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		if (defined($mesh_dir)) {
+		    &update_mesh_buffer;
+		}
 		$updated = 1;
 		#glutPostRedisplay;
 	    }
@@ -600,9 +602,9 @@ HELP
 	    if ($frame + 1 < $end_frame) {
 		++$frame;
 		$skeleton->set_positions(@{$positions[$frame]});
-		glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
-		glBufferSubData_c(GL_ARRAY_BUFFER, 0, $batch_size, $vertices_array->ptr + $frame * $batch_size);
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		if (defined($mesh_dir)) {
+		    &update_mesh_buffer;
+		}
 		$updated = 1;
 		#glutPostRedisplay;
 	    }
@@ -610,9 +612,9 @@ HELP
 	    if ($frame > $start_frame) {
 		--$frame;
 		$skeleton->set_positions(@{$positions[$frame]});
-		glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
-		glBufferSubData_c(GL_ARRAY_BUFFER, 0, $batch_size, $vertices_array->ptr + $frame * $batch_size);
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		if (defined($mesh_dir)) {
+		    &update_mesh_buffer;
+		}
 		$updated = 1;
 		#glutPostRedisplay;
 	    }
@@ -744,57 +746,66 @@ $skeleton->shader($shader);
 $skeleton->set_positions(@{$positions[$frame]});
 ($prev_x, $prev_y, $prev_z) = @{$positions[$frame]}[3 .. 5];
 
-my ($n, $m, $d);
+my $num_elem;
+if (defined($mesh_dir)) {
+    my ($n, $m, $d);
 
-open $fh, '<', "$mesh_dir/faces.bin";
-$head = <$fh>;
-($n, $m) = split ' ', $head;
-my $num_elem = $n * $m;
-$faces_size = $n * $m * $int_size;
-read($fh, $faces_buffer, $faces_size);
-print("faces buffer: ", length($faces_buffer) / 1024, " KB\n");
-close $fh;
+    open $fh, '<', "$mesh_dir/faces.bin";
+    $head = <$fh>;
+    ($n, $m) = split ' ', $head;
+    $num_elem = $n * $m;
+    $faces_size = $n * $m * $int_size;
+    read($fh, $faces_buffer, $faces_size);
+    print("faces buffer: ", length($faces_buffer) / 1024, " KB\n");
+    close $fh;
 
-open $fh, '<', "$mesh_dir/vertices.bin";
-$head = <$fh>;
-($n, $m, $d) = split ' ', $head;
-$batch_size = $m * $d * $int_size;
-$vertices_size = $n * $m * $d * $float_size;
-read($fh, $vertices_buffer, $vertices_size);
-print("vertice buffer: ", length($vertices_buffer) / (1024 ** 2), " MB\n");
-close $fh;
+    open $fh, '<', "$mesh_dir/vertices.bin";
+    $head = <$fh>;
+    ($n, $m, $d) = split ' ', $head;
+    $batch_size = $m * $d * $int_size;
+    $vertices_size = $n * $m * $d * $float_size;
+    read($fh, $vertices_buffer, $vertices_size);
+    print("vertice buffer: ", length($vertices_buffer) / (1024 ** 2), " MB\n");
+    close $fh;
 
-$mesh_vao_array = OpenGL::Array->new(1, GL_INT);
-glGenVertexArrays_c(1, $mesh_vao_array->ptr);
-$mesh_vao = ($mesh_vao_array->retrieve(0, 1))[0];
-glBindVertexArray($mesh_vao);
+    $mesh_vao_array = OpenGL::Array->new(1, GL_INT);
+    glGenVertexArrays_c(1, $mesh_vao_array->ptr);
+    $mesh_vao = ($mesh_vao_array->retrieve(0, 1))[0];
+    glBindVertexArray($mesh_vao);
 
-$mesh_vbo_array = OpenGL::Array->new(1, GL_INT);
-glGenBuffers_c(1, $mesh_vbo_array->ptr);
-$mesh_vbo = ($mesh_vbo_array->retrieve(0, 1))[0];
-glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
-$vertices_array = OpenGL::Array->new_scalar(GL_FLOAT, $vertices_buffer, length($vertices_buffer));
-glBufferData_c(GL_ARRAY_BUFFER, $batch_size, $vertices_array->ptr + $frame * $batch_size, GL_DYNAMIC_DRAW);
+    $mesh_vbo_array = OpenGL::Array->new(1, GL_INT);
+    glGenBuffers_c(1, $mesh_vbo_array->ptr);
+    $mesh_vbo = ($mesh_vbo_array->retrieve(0, 1))[0];
+    glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
+    $vertices_array = OpenGL::Array->new_scalar(GL_FLOAT, $vertices_buffer, length($vertices_buffer));
+    glBufferData_c(GL_ARRAY_BUFFER, $batch_size, $vertices_array->ptr + $frame * $batch_size, GL_DYNAMIC_DRAW);
 #glBufferData_c(GL_ARRAY_BUFFER, 100 * $batch_size, $vertices_array->ptr + $frame * $batch_size, GL_STATIC_DRAW);
-glVertexAttribPointer_c(0, 3, GL_FLOAT, GL_FALSE, 3 * $float_size, 0);
-glEnableVertexAttribArray(0);
+    glVertexAttribPointer_c(0, 3, GL_FLOAT, GL_FALSE, 3 * $float_size, 0);
+    glEnableVertexAttribArray(0);
 
-$mesh_ebo_array = OpenGL::Array->new(1, GL_INT);
-glGenBuffers_c(1, $mesh_ebo_array->ptr);
-$mesh_ebo = ($mesh_ebo_array->retrieve(0, 1))[0];
-glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, $mesh_ebo);
-$indices_array = OpenGL::Array->new_scalar(GL_UNSIGNED_INT, $faces_buffer, length($faces_buffer));
-glBufferData_c(GL_ELEMENT_ARRAY_BUFFER, length($faces_buffer), $indices_array->ptr, GL_STATIC_DRAW);
+    $mesh_ebo_array = OpenGL::Array->new(1, GL_INT);
+    glGenBuffers_c(1, $mesh_ebo_array->ptr);
+    $mesh_ebo = ($mesh_ebo_array->retrieve(0, 1))[0];
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, $mesh_ebo);
+    $indices_array = OpenGL::Array->new_scalar(GL_UNSIGNED_INT, $faces_buffer, length($faces_buffer));
+    glBufferData_c(GL_ELEMENT_ARRAY_BUFFER, length($faces_buffer), $indices_array->ptr, GL_STATIC_DRAW);
 
 #glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0); # why need to delete this to avoid the crash??
-glBindBuffer(GL_ARRAY_BUFFER, 0);
-glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+}
 
 sub draw_mesh {
     glBindVertexArray($mesh_vao);
     glDrawElements_c(GL_TRIANGLES, $num_elem, GL_UNSIGNED_INT, 0);
     #glDrawElementsBaseVertex_c(GL_TRIANGLES, $num_elem, GL_UNSIGNED_INT, 0, $frame * $m);
     glBindVertexArray(0);
+}
+
+sub update_mesh_buffer {
+    glBindBuffer(GL_ARRAY_BUFFER, $mesh_vbo);
+    glBufferSubData_c(GL_ARRAY_BUFFER, 0, $batch_size, $vertices_array->ptr + $frame * $batch_size);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
 while (!glfwWindowShouldClose($window)) {
