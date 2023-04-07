@@ -21,10 +21,14 @@ use warnings;
 
 my ($dir, $mesh_dir);
 my $character = 'character.json';
+my $floor_z = 0.0;
+my $fps = 60;
 GetOptions(
     'dir=s'	    => \$dir,
     'mesh_dir=s'    => \$mesh_dir,
-    'character|j=s'   => \$character,
+    'character|j=s' => \$character,
+    'floor_z|z=f'   => \$floor_z,
+    'fps|F=i'       => \$fps,
 );
 my $window;
 my ($screen_width, $screen_height) = (1280, 720);
@@ -48,14 +52,12 @@ my $identity_mat = GLM::Mat4->new(
 );
 
 my $animate = 0;
-my $fps = 60;
 
 my $ffmpeg = $^O eq 'MSWin32' ? 'ffmpeg.exe': 'ffmpeg';
 my $fh_ffmpeg;
 my $recording = 0;
 my $png_counter = 0;
 
-my $floor_z = 0.0;
 my ($floor_width, $floor_height) = (10, 10);
 my $floor_buffer;
 my $cube_buffer;
